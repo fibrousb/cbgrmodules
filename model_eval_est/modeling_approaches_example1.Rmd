@@ -2,7 +2,7 @@
 title: "Modelling Approaches, Example 1"
 author: "J. Zeldin"
 date: "September 14, 2018"
-output: html_document
+output: github_document
 ---
 
 ### Demonstrating Some Modeling Approaches Using CO2 uptake data from grassland plant species  

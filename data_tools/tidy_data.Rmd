@@ -2,7 +2,7 @@
 title: "Tidy Data"
 author: "J. Zeldin"
 date: "September 14, 2018"
-output: html_document
+output: github_document
 ---
 
 
