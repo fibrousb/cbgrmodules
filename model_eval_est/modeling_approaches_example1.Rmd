@@ -1,0 +1,337 @@
+---
+title: "Modelling Approaches, Example 1"
+author: "J. Zeldin"
+date: "September 14, 2018"
+output: html_document
+---
+
+### Demonstrating Some Modeling Approaches Using CO2 uptake data from grassland plant species  
+  
+```{r, message=FALSE,warning=F}
+library(tidyverse);library(lme4)
+```
+    
+
+#### Overview
+In this module, we will use the built in dataset "CO2" to demonstrate some modeling approaches.
+
+This data set consists of observations from six plants from Quebec and 6 from Mississippi. Half of the plants from each provenance were subjected to a chilling treatment. Each plants CO2 uptake rate was measured at 7 different CO2 concentrations. 
+
+We might be interested in understanding if the chilling treatment and/or CO2 concentration influences CO2 uptake rate. Let's explore the data and try some modeling approaches to understand what is happening in the experiment.  
+  
+#### Data Exploration
+
+First let's explore the data using some visualization techniques and summary statistics.
+
+```{r}
+
+# The distribution of our response variable
+CO2 %>%
+  ggplot(aes(uptake))+
+  geom_histogram(bins = 15, color = "black")
+  
+  # Not quite normally distributed... almost bimodal. Let's include some     other independant variables 
+CO2 %>%
+  ggplot(aes(uptake, fill = Treatment))+
+  geom_histogram(position = "identity",alpha = 0.5,
+                 bins = 15, color = "black")+
+  scale_fill_brewer(palette = "Dark2")
+
+CO2 %>%
+  ggplot(aes(uptake, fill = Type))+
+  geom_histogram(position = "identity",alpha = 0.5,
+                 bins = 15, color = "black")+
+  scale_fill_brewer(palette = "Set3")
+  # The plant origin may be driving the bimodal distribution
+
+# Visualize the relationship b/w concentration and uptake
+CO2 %>%
+  ggplot(aes(conc,uptake))+
+  geom_point()
+
+# Add independant variables
+CO2 %>%
+  ggplot(aes(conc,uptake, color = Treatment))+
+  geom_point()+
+  scale_color_brewer(palette = "Dark2")
+CO2 %>%
+  ggplot(aes(conc,uptake, color = Type))+
+  geom_point()+
+  scale_color_brewer(palette = "Set2")
+CO2 %>%
+  ggplot(aes(conc,uptake, shape = Type, color = Treatment))+
+  geom_point()+
+  scale_color_brewer(palette = "Set2")
+
+```
+There appears to be an exponential relationship b/w concentration and uptake. There is also a pretty clear additive effect of plant origin.  
+
+
+Let's building some models. We will start with a simple linear regression of uptake ~ conentration
+
+```{r}
+lm_1 <- lm(uptake ~ conc, data = CO2)
+summary(lm_1)
+```
+The summary output gives us a very significant p-value for the concentration term as well as for the F test of the overall model and the adjusted R2 is 0.23. There is quite a bit of unexplained variation in our data in this case. Let's plot our model's predictions and look at the residuals.
+
+```{r}
+library(broom)
+
+lm_1 %>% 
+  augment() %>% 
+  ggplot(aes(conc,uptake))+
+  geom_point()+
+  geom_line(aes(conc,.fitted), color = "red")+
+  theme_bw()
+
+par(mfrow=c(2,2))
+plot(lm_1)
+par(mfrow=c(1,1))
+```
+From the plots above - it's pretty clear that our model, while significant, is not doing a good job of describing our data.
+
+Originally, we saw that there was probably an exponential relationship b/w concentraiton and uptake. Let's fit an exponential model by log-transofrming the response variable uptake
+
+```{r}
+CO2 <- CO2 %>%
+  mutate(log_conc = log(conc))
+
+em_1 <- lm(uptake ~ log_conc, data = CO2)
+summary(em_1)
+```
+The summary tells a similar story, significant concentration term, F-test, but now we have a higher adjusted R2 of 0.34. Let's plot it out
+
+```{r}
+em_1 %>% 
+  augment(newdata = CO2) %>% 
+  ggplot(aes(conc,uptake))+
+  geom_point()+
+  geom_line(aes(conc,.fitted), color = "red")+
+  theme_bw()
+
+```
+
+We have the same issues as our first model. This is because there is more structure in our data that we have yet to address. We should fix this.
+
+One of the main goals of the study underlying the data was the effect of the chilling treatment on CO2 uptake. As such, we should include it in our model.
+
+```{r}
+em_2 <- lm(uptake ~ log_conc*Treatment, data = CO2)
+summary(em_2)
+
+em_2 %>% 
+  augment(newdata = CO2) %>% 
+  ggplot(aes(conc,uptake, color = Treatment))+
+  geom_point()+
+  geom_line(aes(conc,.fitted))+
+  theme_bw()
+
+```
+
+This model gives us similar results as above, except now we have an non-siginificant Treatment and Treatment x Concentration terms. Our model is still not doing a great job of describing the data. Let's see if removing the non-significant interaction term improves the situation.
+
+```{r}
+em_3 <- update(em_2, .~. - Treatment:log_conc)
+summary(em_3)
+
+em_3 %>% 
+  augment(newdata = CO2) %>% 
+  ggplot(aes(conc,uptake, color = Treatment))+
+  geom_point()+
+  geom_line(aes(conc,.fitted))+
+  theme_bw()
+```
+Now the Treatment effect is significant in the model summary. However, the model is still not describing the data well. The residuals appear to be large
+
+Now is a good time to note that the modelling process above is not in the most appropriate order. Generally, you will want to start by building a model that includes all of relevant terms and work backwards, removing terms that don't contribute to the model's ability to describe the data. 
+
+So now that we know more about the modelling process, let's build a more extensive model including all of our relevant independant variables: Concentration, Treatment, and Type (plant origin). We won't include the Concentration x Treatment interaction, as it was suggested by our visualizations and was deemed unimportant in our earlier analyses. We will then go through a basic model simplification procedure based on likelihood ratio testing of models with each predictor dropped.
+
+
+
+```{r}
+model_1 <- lm(uptake ~ log_conc + Treatment + Type + log_conc:Type + Treatment:Type, data = CO2 )
+summary(model_1)
+
+
+model_2 <- update(model_1, .~. - log_conc:Type)
+anova(model_2,model_1) # p < 0.05, suggests term should be retained
+
+model_3 <- update(model_1, .~. - Type:Treatment) # testing next interaction term
+anova(model_3,model_1) # p < 0.05 suggests retaining term
+
+summary(model_2) # model 1 is our best model
+```
+So our best model indicates that uptake is affected by concentration, type (plant origin), treatment, and the interaction b/w treatment and type and concentration and type. We didn't really need to do the individual LRTests because the p-values in the summary call is equivalent to anovas() with individual terms dropped, but redundancy can be good. 
+
+Note that the R2 went up to 0.81. This suggests the model is explaining a lot more of the variation in the data.
+
+Let's visualize the model's predictions
+
+```{r}
+model_1 %>% 
+  augment(newdata = CO2) %>% 
+  ggplot(aes(conc,uptake, color = Type, shape = Treatment))+
+  geom_point()+
+  geom_line(aes(conc,.fitted, linetype = Treatment))+
+  theme_bw()
+```
+Looks like the model is doing a better job now. But its hard to differentiate Treatment in this graph. Let's facet by Treatment to make it more readable. We
+ll also add std. error ribbons to visualize uncertainty.
+
+```{r}
+model_1 %>% 
+  augment(newdata = CO2) %>% 
+  ggplot(aes(conc,uptake, color = Type, shape = Treatment))+
+  geom_point()+
+  geom_ribbon(aes(conc,ymin = .fitted - .se.fit, ymax = .fitted + .se.fit,
+                  group = Type),
+              alpha = 0.2, color = NA)+
+  geom_line(aes(conc,.fitted))+
+  facet_grid(~Treatment)+
+  theme_bw()
+```
+
+Now we can more see what's happening much clearer. The model suggests that there is a positive exponential relationship b/w CO2 concentration  and CO2 uptake. Additionally, the chilling treatment had an additive effect, reducing the rate of CO2 uptake. Plants from Quebec take up CO2 faster than those from Mississppi and the negative chilling effect appears to be more pronounced in plants form Mississippi.
+
+This is great! However, there are an issue remaining... Because the data has multiple observations for each plant, our observations are not independant. This can invalidate our conclusions unless we address it.
+
+The best way to address this non-independance is by using multi-level AKA mixed-effect modeling. This approach allows us to include individual plant identity as a random effect variable. The model will account for the variation due to differences between individual plants and allow us to account for the non-independance in our observations. It also lets us generalize our findings more broadly across the population and not just the specific plants in the experiment.
+
+We will be using the lme4 package to fit the mixed-effect models. These types of models can get complicated and there are assumptions that must be met etc. We will touch on those but won't linger to much more brevity.
+
+```{r}
+
+library(lme4);library(pbkrtest) # load the lme4 and pbkrtest and packages
+
+# setup the model, same formula as above but also including plantID as a random effect w/ random intercept. We will use REML = T for now
+lmm_1 <- lmer(uptake ~ log_conc + Treatment + Type + log_conc:Type + Treatment:Type + (1|Plant), data = CO2,REML = T )
+
+summary(lmm_1)
+```
+The model output for the mixed-effect model looks similar to regular linear models, but with some exceptions.
+
+We now have a random effects section that gives us information about variance components. In this case, the variance associated with the random effect planID is 2.74 and the residual variance is 16.16. We can calculate the intraclass correlation coefficent (ICC) also known as heritability or repeatability. This is simply the variance of the random effect divided by the sum of the random effect variance and the residual variance:
+
+```{r}
+vc <- as.data.frame(VarCorr(lmm_1)) # These are the model's variance components
+vc
+icc <- vc[1,"vcov"]/(vc[1,"vcov"] + vc[2,"vcov"])
+icc # ICC = 0.15
+```
+The ICC = 0.15, meaning that PlantID is responsible for 15% of the variance in the model.
+
+We can either stop here and predict/validate the model - or - perform model simplification as we did with the regular linear models. Let's try the latter route
+
+```{r}
+# First, we have to re-fit the model with ML (REML = F) in order to compare models with different fixed effect structures
+
+lmm_1 <- lmer(uptake ~ log_conc + Treatment + Type + log_conc:Type + Treatment:Type + (1|Plant), data = CO2,REML = F)
+
+summary(lmm_1)
+# Now we can fit a model that drops the interaction term with the lowest absolute t-value
+
+lmm_2 <- lmer(uptake ~ log_conc + Treatment + Type + log_conc:Type + (1|Plant), data = CO2,REML = F)
+
+# a normal anova() call will use the Wald d.f for the LRTest
+anova(lmm_2,lmm_1) 
+# we can also use KRmodcomp() to use the K-Rogers d.f, a slighlty more conservative method
+KRmodcomp(lmm_2,lmm_1)
+
+# Both approaches retain the interaction.
+# Now for the second interaction
+
+lmm_3 <- lmer(uptake ~ log_conc + Treatment + Type + Treatment:Type + (1|Plant), data = CO2,REML = F)
+
+anova(lmm_3,lmm_1)
+KRmodcomp(lmm_3,lmm_1)
+# keep all interactions, lmm_1 is our best model
+```
+We could continue doing sequential LRTests to drum up p-values for each term, but the t-values in the summary output already suggest all terms are significant. Also, p-values are unreliable in mixed effect modeling. You're better off visualizing and summarizing the model predictions and evaluating the fit to the data. The last option is parametric bootstapping which is an even more conservative alternative. We won't go through that here.
+
+Let's look at our model's predictions and evaluate the fit. First diagnostics
+
+```{r}
+library(sjPlot)
+
+plot_model(lmm_1, type ="diag")
+
+```
+The diagnostics mostly check out. Normaility is there for the residuals and random effects. We do have some slight issues in homogeneity of variance, but this appears minor. There are alternative ways of specifying models to deal with this, but it isn't too bad here and shouldn't invalidate the model.
+
+Now predictions:
+
+```{r}
+
+# refit model with REML
+
+
+lmm_1 <- lmer(uptake ~ log_conc + Treatment + Type + log_conc:Type + Treatment:Type + (1|Plant), data = CO2,REML =T)
+
+lmm_1 %>% 
+  augment(newdata = CO2) %>% 
+  ggplot(aes(conc,uptake, color = Type, shape = Treatment))+
+  geom_point()+
+  geom_line(aes(conc,.fixed))+
+  facet_grid(~Treatment)+
+  theme_bw()
+```
+Let's compare to our regular linear model 
+```{r}
+reg <- augment(model_1, newdata = CO2)
+lmm_1 %>% 
+  augment(newdata = CO2) %>% 
+  ggplot(aes(conc,uptake, color = Type, shape = Treatment))+
+  geom_line(aes(conc,.fixed))+
+  geom_line(data = reg, aes(conc,.fitted, group = Type), color = "black",linetype = "dashed")+
+  facet_grid(~Treatment)+
+  theme_bw()
+```
+
+The fixed predictions from the mixed-effect model are exactly the same as the regular linear model. This makes sense since the coeffeicents are the same.
+
+Now let's visualize how the random effect influence the intercepts
+
+```{r}
+lmm_1 %>% 
+  augment(newdata = CO2) %>% 
+  ggplot(aes(conc,uptake, color = Type, shape = Treatment))+
+  geom_point()+
+  geom_line(aes(conc,.fitted, group = Plant))+
+  facet_grid(~Treatment)+
+  theme_bw()
+```
+With individual lines for each Plant, we see how the random intercept plays out in the model. The lines in this case are pretty tightly grouped, this is reflect in the relatively small contribution of the random effect to the variation in the data (ICC = 0.15).
+
+We can also evaluate if the model would be improved by including a random slope.
+
+```{r}
+lmm_4 <- lmer(uptake ~ log_conc + Treatment + Type + log_conc:Type + Treatment:Type + (1 +log_conc|Plant), data = CO2,REML = T)
+
+# calling anova will automatically re-fit models with ML
+anova(lmm_4,lmm_1) # not a lot of evidence that ranomd slope improves model
+
+# plotting, regardless
+l4 <- augment(lmm_4, newdata = CO2)
+
+lmm_1 %>% 
+  augment(newdata = CO2) %>% 
+  ggplot(aes(conc,uptake, color = Type, shape = Treatment))+
+  geom_line(aes(conc,.fitted, group = Plant))+
+  geom_line(data = l4,aes(conc,.fitted, group = Plant), color = "black", linetype = "dashed")+
+  facet_grid(~Treatment)+
+  theme_bw()
+
+lmm_1 %>% 
+  augment(newdata = CO2) %>% 
+  ggplot(aes(conc,uptake, color = Type, shape = Treatment))+
+  geom_line(aes(conc,.fixed, group = Plant))+
+  geom_line(data = l4,aes(conc,.fixed, group = Type), color = "black", linetype = "dashed")+
+  facet_grid(~Treatment)+
+  theme_bw()
+```
+
+So, the random slope changes the predictions of the fitted trajectories based on PlantID. It doesn't change predicitons based on the fixed effect for plants form Quebec, but the Mississipppi plants have slight deviations in predictions.
+
+Regardless, it doesn't appear that adding a random slope term improves the model. So we can stick with our first model, and interpret. The outcome is the same as our regular linear model, only now we are accounting for random variaiton in the intercept do to PlantID, making our analyses more accurate and generalizable.

@@ -16,6 +16,7 @@ library(modelr)
 library(broom)
 library(ggthemes)
 library(car)
+library(emmeans)
 
 
 
@@ -180,7 +181,8 @@ anova(null,mod1)
 ## So, our predictor is significant below 0.05. From the summary we see the slope is
 ## estimated at -5.3, indicating a considerble negative effect of weight on fuel efficiency.
 
-
+## We can also get the confidence interval around the intercept and slope estimates
+ci <- confint(mod1,c("wt","(Intercept)"));ci
 
 
 #### Model comparison and visual evaluation of fit with different types of models ####
@@ -304,3 +306,20 @@ Anova(tooth_model, type = 3)
 ## statistically significant below 0.05. This coupled with the visual and qunatitative
 ## evidence above tells us our model does a good job of describing the data. Now it's up
 ## to you as the analyst to interpret these results!
+
+
+## Finally, after all the above - and to provide context and evidence for your interpretations
+## of the data - you may want to report estimated marginal means. These are the mean values
+## as estimated by the model. This is often most useful after running an ANOVA where the 
+## indepenant variable(s) are categorical. This allows you to directly compare estimated 
+## means of the groups you are likely investiagting differences among.
+
+## We can use the emmeans package for this. Provide the function with the model and the 
+## predictors to estimate over.
+
+emmeans(tooth_model,specs = c("dose","supp"))
+
+## The output will provide means, st. errors, and confidence levels. You can also use the
+## resulting data frame for plotting etc.
+
+
